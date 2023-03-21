@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -156,10 +157,17 @@ func ffmpeg(ctx context.Context, stderr io.Writer, args ...string) (err error) {
 	return cmd.Wait()
 }
 
+var errLine = regexp.MustCompile("^[eE]rror")
+
 func lastline(r io.Reader) (msg string) {
 	sc := bufio.NewScanner(r)
+	sep := ""
 	for sc.Scan() {
-		msg = sc.Text()
+		line := sc.Text()
+		if errLine.MatchString(line) {
+			msg = sep + line
+			sep = ", "
+		}
 	}
 	return
 }
