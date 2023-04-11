@@ -105,13 +105,17 @@ func main() {
 	for statc != nil {
 		select {
 		case err := <-donec:
+			fd2.Seek(0, 0)
+			logdata := new(bytes.Buffer)
+			io.Copy(logdata, fd2)
+			lasterr := lastline(logdata)
+			if err == nil && lasterr != "" {
+				err = fmt.Errorf("ffmpeg failed")
+			}
 			if err == nil {
 				log.Info.Add("topic", "summary", "action", "done", "progress", 100).Add(prior.Fields()...).Printf("done")
 			} else {
-				fd2.Seek(0, 0)
-				logdata := new(bytes.Buffer)
-				io.Copy(logdata, fd2)
-				log.Fatal.Add("topic", "summary", "action", "done", "err", err, "progress", -100).Printf("failed: %q", lastline(logdata))
+				log.Fatal.Add("topic", "summary", "action", "done", "err", err, "progress", -100).Printf("failed: %q", lasterr)
 			}
 		case current, more := <-statc:
 			if !more {
@@ -157,16 +161,25 @@ func ffmpeg(ctx context.Context, stderr io.Writer, args ...string) (err error) {
 	return cmd.Wait()
 }
 
-var errLine = regexp.MustCompile("^[eE]rror")
+var (
+	errLine       = regexp.MustCompile("^[eE]rror")
+	errImpossible = regexp.MustCompile("Impossible to open.+")
+	errInvalid    = regexp.MustCompile(".+Invalid data found when processing input")
+
+	errCk = []*regexp.Regexp{errLine, errImpossible, errInvalid}
+)
 
 func lastline(r io.Reader) (msg string) {
 	sc := bufio.NewScanner(r)
 	sep := ""
 	for sc.Scan() {
 		line := sc.Text()
-		if errLine.MatchString(line) {
-			msg = sep + line
-			sep = ", "
+		for _, ck := range errCk {
+			if ck.MatchString(line) {
+				msg = sep + line
+				sep = ", "
+				return
+			}
 		}
 	}
 	return
