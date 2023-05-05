@@ -165,8 +165,9 @@ var (
 	errLine       = regexp.MustCompile("^[eE]rror")
 	errImpossible = regexp.MustCompile("Impossible to open.+")
 	errInvalid    = regexp.MustCompile(".+Invalid data found when processing input")
+	errNoStream   = regexp.MustCompile("^[Ss]tream map.+matches no stream")
 
-	errCk = []*regexp.Regexp{errLine, errImpossible, errInvalid}
+	errCk = []*regexp.Regexp{errLine, errImpossible, errInvalid, errNoStream}
 )
 
 func lastline(r io.Reader) (msg string) {
