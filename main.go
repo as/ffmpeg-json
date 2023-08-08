@@ -49,7 +49,19 @@ var (
 	targetOutputs, _ = strconv.Atoi(os.Getenv("OUTPUTS"))
 )
 
+// NOTE(as): HWFRAMES: We might need to re-execute ffmpeg with a new value for extra_hw_frames
+// Search for HWFRAMES1 for notes
+var (
+	hwframesbug    = false
+	hwframesptr    *string
+	hwframes       = 0
+	hwframesmax, _ = strconv.Atoi(os.Getenv("MAXEXTRAHWFRAMES"))
+)
+
 func init() {
+	if hwframesmax == 0 {
+		hwframesmax = 64
+	}
 	if maxstall == 0 {
 		maxstall = 1000
 	}
@@ -62,6 +74,8 @@ func init() {
 }
 
 func main() {
+	log.DebugOn = false
+
 	defer log.Trap()
 	_, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -85,6 +99,17 @@ func main() {
 	ctx, kill := context.WithCancel(context.Background())
 	defer kill()
 
+	// NOTE(as): HWFRAMES1: For GPU featuresets, scan for hwframes on the command line and keep track of it
+	// because this value might be too small or too large for some media. In our case, assume its always too small
+	// and increment it with retry as a brute force solution for now. See HWFRAMES2
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i-1] == "-extra_hw_frames" {
+			hwframesptr = &os.Args[i]
+			hwframes, _ = strconv.Atoi(*hwframesptr)
+			log.Info.Add("topic", "gpu", "action", "bootstrap", "extra_hw_frames", hwframes).Printf("detected -extra_hw_frames arg")
+		}
+	}
+
 	// run the command
 	// inherit from parent process and override
 	// necessary values.
@@ -94,7 +119,7 @@ func main() {
 		statw.Close()
 	}()
 
-	statc := make(chan State, 10) // status channel
+	statc := make(chan State, 1000) // status channel
 	go watchState(statr, statc)
 
 	update := time.NewTicker(logFreq)
@@ -108,6 +133,7 @@ func main() {
 			fd2.Seek(0, 0)
 			logdata := new(bytes.Buffer)
 			io.Copy(logdata, fd2)
+
 			lasterr := lastline(logdata)
 			if err == nil && lasterr != "" {
 				err = fmt.Errorf("ffmpeg failed")
@@ -115,7 +141,28 @@ func main() {
 			if err == nil {
 				log.Info.Add("topic", "summary", "action", "done", "progress", 100).Add(prior.Fields()...).Printf("done")
 			} else {
-				log.Fatal.Add("topic", "summary", "action", "done", "err", err, "progress", -100).Printf("failed: %q", lasterr)
+				if hwframesbug && hwframes < hwframesmax {
+					// NOTE(as): HWFRAMES2
+					// This is a dirty hack to restart the process created out of necessity. The argument is incremented and ffmpeg-json
+					// re-executes itself. This clobbers all state in the current process, but we haven't done much work anyway.
+					//
+					// Finally, see state.go:/HWFRAMES3/ for the detection logic
+
+					hwframes++
+					*hwframesptr = fmt.Sprint(hwframes)
+					log.Error.Add("topic", "gpu", "action", "retry", "extra_hw_frames", hwframes).Printf("increment extra_hw_frames and retry")
+					c := exec.Command(os.Args[0], os.Args[1:]...)
+					c.Stdin = os.Stdin
+					c.Stdout = os.Stdout
+					c.Stderr = os.Stderr
+					c.Env = os.Environ()
+					err := c.Run()
+					if err != nil {
+						os.Exit(1)
+					}
+					os.Exit(0)
+				}
+				log.Fatal.Add("topic", "summary", "action", "failed", "err", err, "progress", -100).Printf("failed: %q", lasterr)
 			}
 		case current, more := <-statc:
 			if !more {

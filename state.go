@@ -20,6 +20,13 @@ func watchState(r io.Reader, state chan<- State) {
 	sc := bufio.NewScanner(CRtoLF{r}) // util.go:/CRtoLF/
 	s0 := State{}
 	for sc.Scan() {
+		// NOTE(as): HWFRAMES3
+		// Self-explanitory string check. That's it.
+		const badhwframes = "No decoder surfaces left"
+		if strings.Contains(sc.Text(), badhwframes) {
+			hwframesbug = true
+		}
+
 		log.Debug.F("watch: state: %v", sc.Text())
 		s1 := State{}.Decode(sc.Text())
 		if s1.Frame <= s0.Frame && s1.Size <= s0.Size {
