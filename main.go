@@ -47,6 +47,9 @@ var (
 	// targetOutputs, if non-zero, adjusts FPS and SPEED with a
 	// multiplier
 	targetOutputs, _ = strconv.Atoi(os.Getenv("OUTPUTS"))
+
+	retry, _    = strconv.Atoi(os.Getenv("RETRY"))
+	maxretry, _ = strconv.Atoi(os.Getenv("MAXRETRY"))
 )
 
 // NOTE(as): HWFRAMES: We might need to re-execute ffmpeg with a new value for extra_hw_frames
@@ -56,6 +59,8 @@ var (
 	hwframesptr    *string
 	hwframes       = 0
 	hwframesmax, _ = strconv.Atoi(os.Getenv("MAXEXTRAHWFRAMES"))
+
+	vramoverflow = false
 )
 
 func init() {
@@ -70,6 +75,9 @@ func init() {
 	}
 	if targetOutputs == 0 {
 		targetOutputs++
+	}
+	if maxretry == 0 {
+		maxretry = 30
 	}
 }
 
@@ -141,26 +149,43 @@ func main() {
 			if err == nil {
 				log.Info.Add("topic", "summary", "action", "done", "progress", 100).Add(prior.Fields()...).Printf("done")
 			} else {
+				doretry := func() {
+					c := exec.Command(os.Args[0], os.Args[1:]...)
+					c.Stdin = os.Stdin
+					c.Stdout = os.Stdout
+					c.Stderr = os.Stderr
+					retry++
+					c.Env = append([]string{}, os.Environ()...)
+					c.Env = append(c.Env, fmt.Sprintf("RETRY=%d", retry))
+					err := c.Run()
+					if err != nil {
+						os.Exit(1)
+					}
+					os.Exit(0)
+				}
+
+				if vramoverflow {
+					ln := log.Error.Add(
+						"topic", "gpu", "action", "oom", "alert", "gpu note out of vram",
+						"retry", retry, "maxretry", maxretry, "err", err,
+					)
+					if retry >= maxretry {
+						ln.Fatal().Printf("max retry reached: gpu OOM: %q", lasterr)
+					}
+					ln.Printf("retry: gpu OOM: %q", lasterr)
+					time.Sleep(time.Second)
+					doretry()
+				}
 				if hwframesbug && hwframes < hwframesmax {
 					// NOTE(as): HWFRAMES2
 					// This is a dirty hack to restart the process created out of necessity. The argument is incremented and ffmpeg-json
 					// re-executes itself. This clobbers all state in the current process, but we haven't done much work anyway.
 					//
 					// Finally, see state.go:/HWFRAMES3/ for the detection logic
-
 					hwframes++
 					*hwframesptr = fmt.Sprint(hwframes)
 					log.Error.Add("topic", "gpu", "action", "retry", "extra_hw_frames", hwframes).Printf("increment extra_hw_frames and retry")
-					c := exec.Command(os.Args[0], os.Args[1:]...)
-					c.Stdin = os.Stdin
-					c.Stdout = os.Stdout
-					c.Stderr = os.Stderr
-					c.Env = os.Environ()
-					err := c.Run()
-					if err != nil {
-						os.Exit(1)
-					}
-					os.Exit(0)
+					doretry()
 				}
 				log.Fatal.Add("topic", "summary", "action", "failed", "err", err, "progress", -100).Printf("failed: %q", lasterr)
 			}

@@ -20,11 +20,17 @@ func watchState(r io.Reader, state chan<- State) {
 	sc := bufio.NewScanner(CRtoLF{r}) // util.go:/CRtoLF/
 	s0 := State{}
 	for sc.Scan() {
+		hastext := func(s string) bool {
+			return strings.Contains(sc.Text(), s)
+		}
 		// NOTE(as): HWFRAMES3
 		// Self-explanitory string check. That's it.
-		const badhwframes = "No decoder surfaces left"
-		if strings.Contains(sc.Text(), badhwframes) {
+		if hastext("No decoder surfaces left") {
 			hwframesbug = true
+		}
+		// NOTE(as): gpu out of memory
+		if hastext("nvenc") && hastext("OpenEncodeSessionEx failed") {
+			vramoverflow = true
 		}
 
 		log.Debug.F("watch: state: %v", sc.Text())
