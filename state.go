@@ -29,7 +29,7 @@ func watchState(r io.Reader, state chan<- State) {
 			hwframesbug = true
 		}
 		// NOTE(as): gpu out of memory
-		if hastext("CUDA_ERROR_OUT_OF_MEMORY") || (hastext("nvenc") && hastext("OpenEncodeSessionEx failed")) {
+		if hastext("out of memory") || hastext("CUDA_ERROR_OUT_OF_MEMORY") || (hastext("nvenc") && hastext("OpenEncodeSessionEx failed")) {
 			vramoverflow = true
 		}
 
