@@ -77,7 +77,7 @@ func init() {
 		targetOutputs++
 	}
 	if maxretry == 0 {
-		maxretry = 30
+		maxretry = 60
 	}
 }
 
@@ -173,7 +173,7 @@ func main() {
 						ln.Fatal().Printf("max retry reached: gpu OOM: %q", lasterr)
 					}
 					ln.Printf("retry: gpu OOM: %q", lasterr)
-					time.Sleep(time.Second)
+					time.Sleep(2 * time.Second)
 					doretry()
 				}
 				if hwframesbug && hwframes < hwframesmax {

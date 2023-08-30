@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -11,25 +13,84 @@ import (
 )
 
 var (
-	split = strings.Split
-	trim  = strings.TrimSpace
+	split   = strings.Split
+	trim    = strings.TrimSpace
+	hastext = strings.Contains
 )
+
+type GPU struct {
+	Name, PCI, Driver string
+	Used, Total       int
+}
+
+func queryGPU() (list []GPU) {
+	out, err := exec.Command(
+		"nvidia-smi",
+		"--query-gpu=utilization.memory,memory.total,name,pci.bus_id,driver_version",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		return nil
+	}
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		g := GPU{}
+		x := strings.ReplaceAll(sc.Text(), " ", "")
+		fmt.Sscanf(x, "%d,%d", &g.Used, &g.Total)
+		f := strings.Split(x, ",")
+		if len(f) < 5 {
+			continue
+		}
+		g.Name = f[2]
+		g.PCI = f[3]
+		g.Driver = f[4]
+		list = append(list, g)
+	}
+	return list
+}
+
+func gpuOOM(s string) (oom bool) {
+	defer func() {
+		if oom {
+			for i, g := range queryGPU() {
+				log.Warn.Add(
+					"gpu_num", i,
+					"gpu_mem_used", g.Used,
+					"gpu_mem_total", g.Total,
+					"gpu_name", g.Name,
+					"gpu_pci", g.PCI,
+					"gpu_driver", g.Driver,
+				).Printf("ffmpeg-json: gpu out of memory condition")
+			}
+		}
+	}()
+	if hastext(s, "nvenc") && hastext(s, "OpenEncodeSessionEx failed") {
+		return true
+	}
+	if hastext(s, "nvenc") && hastext(s, "out of memory") {
+		return true
+	}
+	if hastext(s, "CUDA_ERROR_OUT_OF_MEMORY") {
+		return true
+	}
+	if hastext(s, "CUDA_ERROR_NO_DEVICE") && len(queryGPU()) != 0 {
+		return true
+	}
+	return false
+}
 
 func watchState(r io.Reader, state chan<- State) {
 	defer close(state)
 	sc := bufio.NewScanner(CRtoLF{r}) // util.go:/CRtoLF/
 	s0 := State{}
 	for sc.Scan() {
-		hastext := func(s string) bool {
-			return strings.Contains(sc.Text(), s)
-		}
 		// NOTE(as): HWFRAMES3
 		// Self-explanitory string check. That's it.
-		if hastext("No decoder surfaces left") {
+		if hastext(sc.Text(), "No decoder surfaces left") {
 			hwframesbug = true
 		}
-		// NOTE(as): gpu out of memory
-		if hastext("out of memory") || hastext("CUDA_ERROR_OUT_OF_MEMORY") || (hastext("nvenc") && hastext("OpenEncodeSessionEx failed")) {
+
+		if gpuOOM(sc.Text()) {
 			vramoverflow = true
 		}
 
