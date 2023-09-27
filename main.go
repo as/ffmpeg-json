@@ -81,6 +81,8 @@ func init() {
 	}
 }
 
+var procstart = time.Now()
+
 func main() {
 	log.DebugOn = false
 
@@ -147,7 +149,7 @@ func main() {
 				err = fmt.Errorf("ffmpeg failed")
 			}
 			if err == nil {
-				log.Info.Add("topic", "summary", "action", "done", "progress", 100).Add(prior.Fields()...).Printf("done")
+				log.Info.Add("topic", "summary", "action", "done", "progress", 100, "uptime", time.Since(procstart).Seconds()).Add(prior.Fields()...).Printf("done")
 			} else {
 				doretry := func() {
 					c := exec.Command(os.Args[0], os.Args[1:]...)

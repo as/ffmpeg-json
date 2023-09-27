@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,8 +20,13 @@ var (
 )
 
 type GPU struct {
+	N                 int
 	Name, PCI, Driver string
 	Used, Total       int
+}
+
+func (g GPU) Load() float64 {
+	return float64(g.Used) / float64(g.Total)
 }
 
 func queryGPU() (list []GPU) {
@@ -33,6 +39,7 @@ func queryGPU() (list []GPU) {
 		return nil
 	}
 	sc := bufio.NewScanner(bytes.NewReader(out))
+	n := 0
 	for sc.Scan() {
 		g := GPU{}
 		x := strings.ReplaceAll(sc.Text(), " ", "")
@@ -41,20 +48,25 @@ func queryGPU() (list []GPU) {
 		if len(f) < 5 {
 			continue
 		}
+		g.N = n
 		g.Name = f[2]
 		g.PCI = f[3]
 		g.Driver = f[4]
 		list = append(list, g)
+		n++
 	}
+	sort.SliceStable(list, func(i, j int) bool {
+		return list[i].Load() < list[j].Load()
+	})
 	return list
 }
 
 func gpuOOM(s string) (oom bool) {
 	defer func() {
 		if oom {
-			for i, g := range queryGPU() {
+			for _, g := range queryGPU() {
 				log.Warn.Add(
-					"gpu_num", i,
+					"gpu_num", g.N,
 					"gpu_mem_used", g.Used,
 					"gpu_mem_total", g.Total,
 					"gpu_name", g.Name,
