@@ -146,7 +146,11 @@ func main() {
 
 			lasterr := lastline(logdata)
 			if err == nil && lasterr != "" {
-				err = fmt.Errorf("ffmpeg failed")
+				// Sometimes ffmpeg will emit errors that appear to be fatal but aren't. Failing on these
+				// types of outputs is detrimental. For example, the PCM decoder can emit errors that
+				// look fatal, but ffmpeg will return a zero exit code because an error threshold wasn't reached
+				//err = fmt.Errorf("ffmpeg failed")
+				log.Warn.Add("topic", "status").Printf("non fatal error: %s", lasterr)
 			}
 			if err == nil {
 				log.Info.Add("topic", "summary", "action", "done", "progress", 100, "uptime", time.Since(procstart).Seconds()).Add(prior.Fields()...).Printf("done")
