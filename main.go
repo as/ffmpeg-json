@@ -227,6 +227,7 @@ func ffmpeg(ctx context.Context, stderr io.Writer, args ...string) (err error) {
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
 	cmd.Env = os.Environ()
 
 	r, _ := cmd.StderrPipe()
