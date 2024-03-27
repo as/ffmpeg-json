@@ -50,6 +50,8 @@ var (
 
 	retry, _    = strconv.Atoi(os.Getenv("RETRY"))
 	maxretry, _ = strconv.Atoi(os.Getenv("MAXRETRY"))
+
+	tolerate = os.Getenv("TOLERATE_ERRORS") != ""
 )
 
 // NOTE(as): HWFRAMES: We might need to re-execute ffmpeg with a new value for extra_hw_frames
@@ -150,7 +152,12 @@ func main() {
 				// types of outputs is detrimental. For example, the PCM decoder can emit errors that
 				// look fatal, but ffmpeg will return a zero exit code because an error threshold wasn't reached
 				//err = fmt.Errorf("ffmpeg failed")
-				log.Warn.Add("topic", "status").Printf("non fatal error: %s", lasterr)
+				if tolerate {
+					log.Warn.Add("topic", "status").Printf("non fatal error: %s", lasterr)
+				} else {
+					err = fmt.Errorf("ffmpeg: zero exit code but parsed fatal error: %s", lasterr)
+					log.Error.Add("topic", "status").Printf("%s", lasterr)
+				}
 			}
 			if err == nil {
 				log.Info.Add("topic", "summary", "action", "done", "progress", 100, "uptime", time.Since(procstart).Seconds()).Add(prior.Fields()...).Printf("done")
