@@ -98,6 +98,10 @@ func watchState(r io.Reader, state chan<- State) {
 	for sc.Scan() {
 		// NOTE(as): HWFRAMES3
 		// Self-explanitory string check. That's it.
+		if hastext(sc.Text(), "Impossible to convert between the formats supported by the filter") {
+			filterbug = true
+		}
+
 		if hastext(sc.Text(), "No decoder surfaces left") {
 			hwframesbug = true
 		}

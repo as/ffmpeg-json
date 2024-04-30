@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/as/log"
@@ -61,6 +62,7 @@ var (
 	hwframesptr    *string
 	hwframes       = 0
 	hwframesmax, _ = strconv.Atoi(os.Getenv("MAXEXTRAHWFRAMES"))
+	filterbug      = false
 
 	vramoverflow = false
 )
@@ -177,6 +179,19 @@ func main() {
 					os.Exit(0)
 				}
 
+				if filterbug && strings.Contains(strings.Join(os.Args, " "), "format=nv12,hwupload,scale_npp=") {
+					log.Error.Add(
+						"topic", "gpu", "action", "filterbug", "alert", "gpu filter bug",
+						"retry", retry, "maxretry", maxretry, "err", err,
+					).Printf("filterbug")
+					for i := 1; i < len(os.Args); i++ {
+						if os.Args[i-1] == "-vf" {
+							filter := &os.Args[i]
+							*filter = strings.ReplaceAll(*filter, "format=nv12,hwupload,scale_npp=", "scale_npp=")
+						}
+					}
+					doretry()
+				}
 				if vramoverflow {
 					ln := log.Error.Add(
 						"topic", "gpu", "action", "oom", "alert", "gpu note out of vram",
@@ -248,12 +263,13 @@ func ffmpeg(ctx context.Context, stderr io.Writer, args ...string) (err error) {
 }
 
 var (
-	errLine       = regexp.MustCompile("^[eE]rror")
 	errImpossible = regexp.MustCompile("Impossible to open.+")
 	errInvalid    = regexp.MustCompile(".+Invalid data found when processing input")
 	errNoStream   = regexp.MustCompile("^[Ss]tream map.+matches no stream")
+	errLine       = regexp.MustCompile("^[eE]rror")
+	errFilter     = regexp.MustCompile("Impossible to convert between the formats supported by the filter")
 
-	errCk = []*regexp.Regexp{errLine, errImpossible, errInvalid, errNoStream}
+	errCk = []*regexp.Regexp{errFilter, errImpossible, errInvalid, errNoStream, errLine}
 )
 
 func lastline(r io.Reader) (msg string) {
