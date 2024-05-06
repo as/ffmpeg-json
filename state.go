@@ -14,10 +14,18 @@ import (
 )
 
 var (
-	split   = strings.Split
-	trim    = strings.TrimSpace
-	hastext = strings.Contains
+	split = strings.Split
+	trim  = strings.TrimSpace
 )
+
+func hastext(in string, has ...string) bool {
+	for _, has := range has {
+		if strings.Contains(in, has) {
+			return true
+		}
+	}
+	return false
+}
 
 type GPU struct {
 	N                 int
@@ -91,6 +99,8 @@ func gpuOOM(s string) (oom bool) {
 	return false
 }
 
+var globalmsg = []string{}
+
 func watchState(r io.Reader, state chan<- State) {
 	defer close(state)
 	sc := bufio.NewScanner(CRtoLF{r}) // util.go:/CRtoLF/
@@ -108,6 +118,11 @@ func watchState(r io.Reader, state chan<- State) {
 
 		if gpuOOM(sc.Text()) {
 			vramoverflow = true
+		}
+
+		if hastext(sc.Text(), "corrupt", "invalid", "error") {
+			globalmsg = append(globalmsg, sc.Text())
+			log.Error.Add("topic", "ffmpeg", "action", "alert", "subject", "error", "err", sc.Text()).Printf("")
 		}
 
 		log.Debug.F("watch: state: %v", sc.Text())

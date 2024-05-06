@@ -52,7 +52,7 @@ var (
 	retry, _    = strconv.Atoi(os.Getenv("RETRY"))
 	maxretry, _ = strconv.Atoi(os.Getenv("MAXRETRY"))
 
-	tolerate = os.Getenv("TOLERATE_ERRORS") != ""
+	tolerate = (os.Getenv("STRICT_ERRORS") == "" || os.Getenv("STRICT_ERRORS") == "0")
 )
 
 // NOTE(as): HWFRAMES: We might need to re-execute ffmpeg with a new value for extra_hw_frames
@@ -68,6 +68,9 @@ var (
 )
 
 func init() {
+	if !tolerate {
+		panic("fuck")
+	}
 	if hwframesmax == 0 {
 		hwframesmax = 64
 	}
@@ -149,11 +152,12 @@ func main() {
 			io.Copy(logdata, fd2)
 
 			lasterr := lastline(logdata)
-			if err == nil && lasterr != "" {
+			if err == nil && lasterr != "" && !(filterbug || vramoverflow || hwframesbug) {
 				// Sometimes ffmpeg will emit errors that appear to be fatal but aren't. Failing on these
 				// types of outputs is detrimental. For example, the PCM decoder can emit errors that
 				// look fatal, but ffmpeg will return a zero exit code because an error threshold wasn't reached
 				//err = fmt.Errorf("ffmpeg failed")
+				lasterr = strings.Join(globalmsg, "\n")
 				if tolerate {
 					log.Warn.Add("topic", "status").Printf("non fatal error: %s", lasterr)
 				} else {
@@ -180,8 +184,7 @@ func main() {
 				}
 
 				if filterbug && strings.Contains(strings.Join(os.Args, " "), "format=nv12,hwupload,scale_npp=") {
-					log.Error.Add(
-						"topic", "gpu", "action", "filterbug", "alert", "gpu filter bug",
+					log.Error.Add("topic", "gpu", "action", "alert", "subject", "filterbug", "details", "gpu filter bug",
 						"retry", retry, "maxretry", maxretry, "err", err,
 					).Printf("filterbug")
 					for i := 1; i < len(os.Args); i++ {
@@ -194,7 +197,7 @@ func main() {
 				}
 				if vramoverflow {
 					ln := log.Error.Add(
-						"topic", "gpu", "action", "oom", "alert", "gpu note out of vram",
+						"topic", "gpu", "action", "alert", "subject", "oom", "details", "gpu note out of vram",
 						"retry", retry, "maxretry", maxretry, "err", err,
 					)
 					if retry >= maxretry {
@@ -212,7 +215,7 @@ func main() {
 					// Finally, see state.go:/HWFRAMES3/ for the detection logic
 					hwframes++
 					*hwframesptr = fmt.Sprint(hwframes)
-					log.Error.Add("topic", "gpu", "action", "retry", "extra_hw_frames", hwframes).Printf("increment extra_hw_frames and retry")
+					log.Error.Add("topic", "gpu", "action", "alert", "subject", "retry", "details", "extra_hw_frames", hwframes).Printf("increment extra_hw_frames and retry")
 					doretry()
 				}
 				log.Fatal.Add("topic", "summary", "action", "failed", "err", err, "progress", -100).Printf("failed: %q", lasterr)
