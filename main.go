@@ -99,6 +99,23 @@ func main() {
 		log.Fatal.F("ffmpeg not found: %v", err)
 	}
 
+	// we replace -t arguments that look like a file name with that filename's duration
+	// but only if minfo is installed
+	_, err = exec.LookPath("minfo")
+	if err == nil {
+		for i := 1; i < len(os.Args); i++ {
+			k, v := os.Args[i-1], os.Args[i]
+			if k == "-t" {
+				if strings.ContainsAny(v, "abcdefghijklmnopqrstuvwzyzABCDEFGJIHKLMNOPQRSTUVWXYZ") {
+					v, err := exec.Command("minfo", "-dur", v).Output()
+					if err == nil {
+						os.Args[i] = string(v)
+					}
+				}
+			}
+		}
+	}
+
 	fd2 := os.Stderr
 	if stderr == "" {
 		fd2, err = os.CreateTemp("", "ffmpeg")
