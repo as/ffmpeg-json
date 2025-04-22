@@ -108,8 +108,8 @@ func main() {
 			if k == "-t" {
 				if strings.ContainsAny(v, "abcdefghijklmnopqrstuvwzyzABCDEFGJIHKLMNOPQRSTUVWXYZ") {
 					v, err := exec.Command("minfo", "-dur", v).Output()
-					if err == nil{
-						os.Args[i] = string(v)
+					if err == nil {
+						os.Args[i] = strings.TrimSpace(string(v))
 					}
 				}
 			}
